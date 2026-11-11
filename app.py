@@ -9,7 +9,7 @@ from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel
 import uvicorn
 from sync import sync_sheet
-from lead_to_crm import BATCH_SIZE, MAX_PER_RUN, count_pending, process_pending
+from lead_to_crm import BATCH_SIZE, MAX_PER_RUN, SETTLE_SECONDS, count_pending, process_pending
 
 # Shared secret the caller (the Google Apps Script on the sheet) sends in the X-Sync-Secret header.
 # Without it, anyone who knows the URL could start agent runs (tokens) or write to any collection.
@@ -76,6 +76,8 @@ def health():
         "crm_cap_per_run": MAX_PER_RUN or "none",
         "leads_per_agent_call": BATCH_SIZE,
         "sync_secret_required": bool(SYNC_SECRET),
+        "settle_seconds": SETTLE_SECONDS,
+        "commit": os.getenv("RENDER_GIT_COMMIT", "local")[:7],  # which version of the code is running
     }
 
 if __name__ == "__main__":

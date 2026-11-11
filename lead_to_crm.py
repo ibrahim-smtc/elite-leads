@@ -68,6 +68,10 @@ AGENT_WEBHOOK_URL = os.getenv(
 MAX_PER_RUN = int(os.getenv("CRM_MAX_PER_RUN", "10"))  # most leads the agent processes per run (token safety); 0 = no cap
 BATCH_SIZE = int(os.getenv("CRM_AGENT_BATCH", "5"))      # leads per agent call (the queue); fewer calls = fewer tokens
 MAX_RETRIES_PER_LEAD = 3
+# The CRM needs a little while before it can see a customer that was JUST created. Wait this long
+# (counted from the customer's creation) before the agent first looks for it; leads the CRM still
+# cannot find are retried after 1x, then 2x this long, instead of being marked failed.
+SETTLE_SECONDS = int(os.getenv("CRM_SETTLE_SECONDS", "30"))
 RUN_LOG = HERE / "crm_agent_runs.jsonl"
 
 # Bookkeeping, not lead data: never sent to the agent.
@@ -239,6 +243,23 @@ class PerfoxMCP:
             return json.loads(text)
         except ValueError:
             return text
+
+
+def created_ts_of(res):
+    """When the customer record was created (epoch seconds, from the upsert answer), or None."""
+    if isinstance(res, dict):
+        v = res.get("created_at")
+        if isinstance(v, str):
+            try:
+                return datetime.fromisoformat(v.replace("Z", "+00:00")).timestamp()
+            except ValueError:
+                return None
+        for x in res.values():
+            if isinstance(x, dict):
+                got = created_ts_of(x)
+                if got:
+                    return got
+    return None
 
 
 def crm_id_of(res):
@@ -444,7 +465,7 @@ def prepare_lead(doc, args, mcp):
               "sent_to_agent": len(agent_fields), "handled_by_code": handled, "attempted_at": utcnow()}
     ctx = {"doc": doc, "lead_id": lead_id, "identity": identity, "identity_used": identity,
            "agent_fields": agent_fields, "record": record, "done": False, "report": None,
-           "updated": [], "execution_id": None,
+           "updated": [], "execution_id": None, "created_ts": None,
            "view": {"identity": identity, "agent_fields": agent_fields, "handled": handled}}
 
     if not (identity["phone"] or identity["email"]):
@@ -462,6 +483,7 @@ def prepare_lead(doc, args, mcp):
             return ctx
         record.update(crm_id=crm_id_of(res), conflict_note=note)
         ctx["identity_used"] = used
+        ctx["created_ts"] = created_ts_of(res)
         if not agent_fields:  # nothing left for the agent to judge: no tokens spent
             record.update(status="synced", synced_at=utcnow(), error=None, updated=[], skipped=[], no_home=[],
                           warnings=[], note="no fields needed the agent")
@@ -514,11 +536,16 @@ def run_agent_for(ctxs):
                 continue
             c["report"], c["execution_id"] = rep, execution_id
             c["updated"] += [u for u in rep.get("updated") or [] if u not in c["updated"]]
-            if has_transient(rep) and not last:
+            # "changed a moment ago" or "customer not found" (the CRM may not see a brand-new customer yet)
+            if (has_transient(rep) or rep.get("status") == "customer_not_found") and not last:
                 retry.append(c)
         pending = retry
         if pending:
-            time.sleep(2)
+            not_found = [c for c in pending if (c.get("report") or {}).get("status") == "customer_not_found"]
+            wait = SETTLE_SECONDS * (attempt + 1) if not_found else 2
+            if not_found:
+                print(f"   -> {len(not_found)} lead(s) not visible in the CRM yet; waiting {wait}s, then asking again")
+            time.sleep(wait)
 
 
 def finish_lead(c):
@@ -588,6 +615,12 @@ def run_batch(args, col, mcp):
                 ctxs.append(failed_ctx(doc, e))
         todo = [c for c in ctxs if not c["done"]]
         if todo:  # ONE agent call for the whole chunk
+            fresh = [c["created_ts"] for c in todo if c.get("created_ts")]
+            if fresh and SETTLE_SECONDS > 0:  # give the CRM time to see customers created just now
+                wait = SETTLE_SECONDS - (time.time() - max(fresh))
+                if wait > 0:
+                    print(f"   -> waiting {wait:.0f}s so the CRM can see the new customers")
+                    time.sleep(wait)
             print(f"   -> {len(todo)} lead(s) sent to the agent in one call")
             try:
                 run_agent_for(todo)
