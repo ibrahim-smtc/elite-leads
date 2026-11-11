@@ -64,6 +64,9 @@ def sync_sheet(sheet_url: str = None, sheet_id: str = None, gid: str = None, db_
 
     sheet_id = sheet_id or os.getenv("SHEET_ID")  # no default: the sheet link comes from the request or .env, never from code
     gid = gid or os.getenv("SHEET_GID", "0")
+    if not sheet_id:
+        raise RuntimeError("No Google Sheet found in sheet_url. Send a link like "
+                           "https://docs.google.com/spreadsheets/d/<sheet-id>/edit#gid=0")
     target_db = db_name or os.getenv("MONGODB_DB", "elite-test-db")
     target_col = collection_name or os.getenv("MONGODB_COLLECTION", "og-leads")
 
