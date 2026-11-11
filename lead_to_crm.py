@@ -491,6 +491,19 @@ def prepare_lead(doc, args, mcp):
     return ctx
 
 
+def empty_answer(c, rep):
+    """
+    True when the agent answered for a lead but mentioned none of its fields and wrote nothing
+    (the answer is useless, e.g. {"skipped": [{"lead_field": "all", "reason": "no_data"}]}).
+    Such a lead must be asked again, not counted as done.
+    """
+    if not c["agent_fields"] or c["updated"] or rep.get("status") == "customer_not_found":
+        return False
+    named = {x.get("lead_field") for k in ("updated", "skipped", "no_home")
+             for x in (rep.get(k) or []) if isinstance(x, dict)}
+    return not (named & set(c["agent_fields"]))
+
+
 def find_result(by_id, lead_id):
     rep = by_id.get(lead_id)
     if rep is None:  # tolerate a shortened id echoed back by the agent
@@ -537,7 +550,7 @@ def run_agent_for(ctxs):
             c["report"], c["execution_id"] = rep, execution_id
             c["updated"] += [u for u in rep.get("updated") or [] if u not in c["updated"]]
             # "changed a moment ago" or "customer not found" (the CRM may not see a brand-new customer yet)
-            if (has_transient(rep) or rep.get("status") == "customer_not_found") and not last:
+            if (has_transient(rep) or rep.get("status") == "customer_not_found" or empty_answer(c, rep)) and not last:
                 retry.append(c)
         pending = retry
         if pending:
@@ -554,9 +567,14 @@ def finish_lead(c):
     written = {u.get("lead_field") for u in c["updated"]}
     rep["skipped"] = [s for s in rep.get("skipped") or [] if s.get("lead_field") not in written]
     skipped, warnings = account_for(rep, c["agent_fields"])
-    status = "failed" if rep.get("status") == "customer_not_found" else "synced"
+    if rep.get("status") == "customer_not_found":
+        status, error = "failed", "customer not visible in the CRM (deleted, or not synced yet)"
+    elif empty_answer(c, rep):
+        status, error = "agent_failed", "agent answered without any field details (will be retried)"
+    else:
+        status, error = "synced", None
     rec.update(
-        status=status, synced_at=utcnow(), error=None if status == "synced" else "agent could not find the customer",
+        status=status, synced_at=utcnow() if status == "synced" else None, error=error,
         execution_id=c["execution_id"], crm_id=rep.get("customer_id") or rec.get("crm_id"),
         updated=[{"crm_field": u.get("crm_field"), "lead_field": u.get("lead_field")} for u in rep.get("updated") or []],
         skipped=skipped, no_home=rep.get("no_home") or [], custom_fields_seen=rep.get("custom_fields_seen") or [],
