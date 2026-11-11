@@ -47,6 +47,10 @@ python lead_to_crm.py --baseline --live        # mark leads already in Mongo as 
 
 ## Notes
 
+- **Token safety cap:** the agent processes at most `CRM_MAX_PER_RUN` leads per run (default **10**, oldest
+  first; `0` = no cap). Leads beyond the cap stay pending and are picked up by later runs.
+  `GET /health` shows the live cap and batch size (no secrets).
+
 - A lead goes back to the agent only when its profile data changes. Row position and call/admin
   columns (call status, attempt, timestamps, campaign) do not count as a change.
 - The sheet must be shared as "Anyone with the link can view" so `sync.py` can download it.

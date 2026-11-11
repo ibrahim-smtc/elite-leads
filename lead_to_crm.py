@@ -16,13 +16,14 @@ process_pending(). It can also be run by hand, as below.
 
 Safe by default: without --live nothing is sent to the CRM / agent and nothing is written to MongoDB.
 
-Optional safety cap (environment): CRM_MAX_PER_RUN = most leads processed per run.
-Unset or 0 means no cap: every pending lead is processed.
+Safety cap: at most CRM_MAX_PER_RUN leads (default 10) are processed per run, oldest first.
+Leads beyond the cap stay pending for the next run. CRM_MAX_PER_RUN=0 means no cap.
 
 Usage
   python lead_to_crm.py --show --limit 3        # dry run: shows what would be sent for 3 pending leads
   python lead_to_crm.py --live --limit 1        # real run on a single lead
-  python lead_to_crm.py --live                  # real run on every pending lead
+  python lead_to_crm.py --live                  # real run: up to CRM_MAX_PER_RUN pending leads (default 10)
+  python lead_to_crm.py --live --all            # ignore the cap: every pending lead (costs many tokens)
   python lead_to_crm.py --live --batch 5        # queue size: 5 leads per agent call (default)
   python lead_to_crm.py --live --watch 60       # keep polling every 60s for new/changed rows
   python lead_to_crm.py --phone 9380810782 --live --force
@@ -64,7 +65,7 @@ AGENT_WEBHOOK_URL = os.getenv(
     "PERFOX_AGENT_WEBHOOK_URL",
     "https://elite-motors-api.perfox.ai/hooks/01a1c523-fb77-73e0-87da-8da8786d701f/lead-profile",
 )
-MAX_PER_RUN = int(os.getenv("CRM_MAX_PER_RUN", "0"))  # optional safety cap on leads per run; 0 = no cap (all pending)
+MAX_PER_RUN = int(os.getenv("CRM_MAX_PER_RUN", "10"))  # most leads the agent processes per run (token safety); 0 = no cap
 BATCH_SIZE = int(os.getenv("CRM_AGENT_BATCH", "5"))      # leads per agent call (the queue); fewer calls = fewer tokens
 MAX_RETRIES_PER_LEAD = 3
 RUN_LOG = HERE / "crm_agent_runs.jsonl"
@@ -689,7 +690,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--live", action="store_true", help="really create customers, call the agent, write MongoDB")
     ap.add_argument("--limit", type=int, default=MAX_PER_RUN,
-                    help="max leads this run (default: CRM_MAX_PER_RUN, or all pending)")
+                    help="max leads this run (default: CRM_MAX_PER_RUN = 10; 0 = no cap)")
     ap.add_argument("--all", action="store_true", help="ignore any cap and process every pending lead")
     ap.add_argument("--batch", type=int, default=BATCH_SIZE,
                     help=f"leads per agent call (default {BATCH_SIZE}); 1 = one lead at a time")

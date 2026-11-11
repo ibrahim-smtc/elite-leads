@@ -9,7 +9,7 @@ from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel
 import uvicorn
 from sync import sync_sheet
-from lead_to_crm import MAX_PER_RUN, count_pending, process_pending
+from lead_to_crm import BATCH_SIZE, MAX_PER_RUN, count_pending, process_pending
 
 # Shared secret the caller (the Google Apps Script on the sheet) sends in the X-Sync-Secret header.
 # Without it, anyone who knows the URL could start agent runs (tokens) or write to any collection.
@@ -56,6 +56,8 @@ def sync_endpoint(payload: SheetSyncRequest, background: BackgroundTasks):
             pending = None  # could not count; still run
         result["crm_leads_pending"] = pending
         result["crm_cap_per_run"] = MAX_PER_RUN or "none"
+        # how many leads the agent will actually take this time (the cap applies per run)
+        result["crm_leads_this_run"] = pending if (pending is None or not MAX_PER_RUN) else min(pending, MAX_PER_RUN)
         if pending == 0:
             result["crm_processing"] = "nothing to do"
         else:
@@ -66,6 +68,15 @@ def sync_endpoint(payload: SheetSyncRequest, background: BackgroundTasks):
             )
             result["crm_processing"] = "started in background"
     return result
+
+@app.get("/health", summary="Live server settings (no secrets, changes nothing)")
+def health():
+    return {
+        "ok": True,
+        "crm_cap_per_run": MAX_PER_RUN or "none",
+        "leads_per_agent_call": BATCH_SIZE,
+        "sync_secret_required": bool(SYNC_SECRET),
+    }
 
 if __name__ == "__main__":
     print("\nStarting server on http://127.0.0.1:8000")
