@@ -37,9 +37,12 @@ python lead_to_crm.py --baseline --live        # mark leads already in Mongo as 
 
 - Start command: `uvicorn app:app --host 0.0.0.0 --port $PORT`
 - Set the variables from `.env.example` as environment variables (at least `MONGODB_URI`,
-  `PERFOX_API_KEY`, `PERFOX_AGENT_WEBHOOK_URL`, `PERFOX_AGENT_WEBHOOK_SECRET`, `SYNC_SECRET`).
+  `PERFOX_API_KEY`, `PERFOX_AGENT_WEBHOOK_URL`, `PERFOX_AGENT_WEBHOOK_SECRET`) and `PYTHON_VERSION=3.12.10`.
 - In MongoDB Atlas, allow Render's IPs under Network Access.
-- `/sync` requires the `X-Sync-Secret` header to match `SYNC_SECRET`.
+- A `/sync` request can name `db_name` and `collection_name`. If it does not, they default to
+  `elite-test-db` and `og-leads` (or `MONGODB_DB` / `MONGODB_COLLECTION` when set).
+- If `SYNC_SECRET` is set, `/sync` requires a matching `X-Sync-Secret` header. If it is unset,
+  `/sync` is open to anyone who knows the URL: fine for testing, set it before production.
 
 ## Notes
 

@@ -64,8 +64,8 @@ def sync_sheet(sheet_url: str = None, sheet_id: str = None, gid: str = None, db_
 
     sheet_id = sheet_id or os.getenv("SHEET_ID")  # no default: the sheet link comes from the request or .env, never from code
     gid = gid or os.getenv("SHEET_GID", "0")
-    target_db = db_name or os.getenv("MONGODB_DB", "crm_staging")
-    target_col = collection_name or os.getenv("MONGODB_COLLECTION", "elite_vw_leads")
+    target_db = db_name or os.getenv("MONGODB_DB", "elite-test-db")
+    target_col = collection_name or os.getenv("MONGODB_COLLECTION", "og-leads")
 
     # 2. Fetch the sheet CSV from Google
     url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
