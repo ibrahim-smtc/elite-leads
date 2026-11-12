@@ -15,7 +15,12 @@ from lead_to_crm import count_pending, process_pending
 from sync import sync_sheet
 
 SHEET_URL = os.getenv("AUTO_SYNC_SHEET_URL", "").strip()
-MINUTES = float(os.getenv("AUTO_SYNC_MINUTES", "10") or 10)
+try:
+    MINUTES = float(os.getenv("AUTO_SYNC_MINUTES", "10") or 10)    # any number: 15, 30, 45, 60 ...
+except ValueError:
+    print("[auto-sync] AUTO_SYNC_MINUTES is not a number, using 10")
+    MINUTES = 10.0
+MINUTES = max(MINUTES, 0.5)                                         # never faster than every 30 seconds
 FIRST_DELAY_SECONDS = 20          # let the server finish starting before the first run
 
 STATE = {"enabled": bool(SHEET_URL), "every_minutes": MINUTES, "runs": 0,
