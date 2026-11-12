@@ -38,7 +38,7 @@ def run_once():
     STATE["last_run"] = _now()
     try:
         res = sync_sheet(sheet_url=SHEET_URL)
-        summary = {k: res.get(k) for k in ("rows_read", "inserted", "updated", "unchanged")}
+        summary = {k: res.get(k) for k in ("rows_read", "inserted", "updated", "unchanged", "removed_placeholders")}
         if res.get("status") == "success" and res.get("database"):
             pending = count_pending(res["database"], res["collection"])
             summary["crm_leads_pending"] = pending

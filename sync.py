@@ -49,6 +49,66 @@ def bool_val(v):
         return False
     return v
 
+# Fields that change on every sync or belong to the CRM step: never count as a lead change.
+_SYNC_ONLY_FIELDS = {"_id", "synced_at", "first_synced_at", "crm_sync"}
+
+
+def _norm(v):
+    """Make a value comparable with what MongoDB stores (UTC, millisecond precision)."""
+    if isinstance(v, datetime):
+        if v.tzinfo is not None:
+            v = v.astimezone(timezone.utc).replace(tzinfo=None)
+        return v.replace(microsecond=v.microsecond // 1000 * 1000)
+    if isinstance(v, dict):
+        return {k: _norm(x) for k, x in v.items()}
+    return v
+
+
+def _same(new_doc: dict, old_doc: dict) -> bool:
+    """True when every sheet field already has the same value in MongoDB."""
+    return all(_norm(v) == _norm(old_doc.get(k)) for k, v in new_doc.items() if k not in _SYNC_ONLY_FIELDS)
+
+
+def upsert_docs(col, docs, now, sheet_id, gid):
+    """
+    Write the sheet rows into MongoDB. Only rows that are new or really changed are written, so
+    the numbers in the result mean what they say (a row is no longer 'updated' just because
+    synced_at moved). Also removes an empty placeholder left behind when a row got its phone later.
+    """
+    by_id = {d["_id"]: d for d in docs}
+    existing = {d["_id"]: d for d in col.find({"_id": {"$in": list(by_id)}})}
+    ops, unchanged = [], 0
+    for _id, doc in by_id.items():
+        old = existing.get(_id)
+        if old is not None and _same(doc, old):
+            unchanged += 1
+            continue
+        doc_copy = {k: v for k, v in doc.items() if k != "_id"}
+        ops.append(UpdateOne({"_id": _id},
+                             {"$set": {**doc_copy, "synced_at": now}, "$setOnInsert": {"first_synced_at": now}},
+                             upsert=True))
+    inserted = updated = 0
+    if ops:
+        r = col.bulk_write(ops, ordered=False)
+        inserted, updated = r.upserted_count, r.modified_count
+        col.create_index([("phone", 1)])
+
+    # A row typed in two steps (name first, phone later) gets a new id once the phone is there. The
+    # earlier phone-less copy is a leftover: remove it, but only if it never became a CRM customer.
+    row_owner = {d["_source"]["row_number"]: d["_id"] for d in docs}
+    removed = 0
+    leftovers = col.find({"_id": {"$nin": list(by_id)}, "_source.sheet_id": sheet_id, "_source.gid": gid,
+                          "phone": None, "call_id": None})
+    for old in leftovers:
+        status = (old.get("crm_sync") or {}).get("status")
+        if status in (None, "skipped_no_contact") and old["_source"]["row_number"] in row_owner:
+            col.delete_one({"_id": old["_id"]})
+            removed += 1
+
+    return {"status": "success", "rows_read": len(docs), "inserted": inserted, "updated": updated,
+            "unchanged": unchanged, "removed_placeholders": removed}
+
+
 def sync_sheet(sheet_url: str = None, sheet_id: str = None, gid: str = None, db_name: str = None, collection_name: str = None, dry_run: bool = False):
     """
     Core sync function: downloads the sheet, cleans it, and upserts to MongoDB Atlas.
@@ -173,35 +233,10 @@ def sync_sheet(sheet_url: str = None, sheet_id: str = None, gid: str = None, db_
     client = MongoClient(mongodb_uri)
     try:
         col = client[target_db][target_col]
-        by_id = {d["_id"]: d for d in docs}
-        ops = []
-        for _id, doc in by_id.items():
-            doc_copy = {k: v for k, v in doc.items() if k != "_id"}
-            ops.append(
-                UpdateOne(
-                    {"_id": _id},
-                    {
-                        "$set": {**doc_copy, "synced_at": now},
-                        "$setOnInsert": {"first_synced_at": now}
-                    },
-                    upsert=True
-                )
-            )
-
-        r = col.bulk_write(ops, ordered=False)
-        col.create_index([("phone", 1)])
-        unchanged = r.matched_count - r.modified_count
-        summary = {
-            "status": "success",
-            "database": target_db,
-            "collection": target_col,
-            "sheet_id": sheet_id,
-            "rows_read": len(docs),
-            "inserted": r.upserted_count,
-            "updated": r.modified_count,
-            "unchanged": unchanged
-        }
-        print(f"Upserted into {target_db}.{target_col}: inserted={r.upserted_count} updated={r.modified_count} unchanged={unchanged}")
+        summary = upsert_docs(col, docs, now, sheet_id, gid)
+        summary.update({"database": target_db, "collection": target_col, "sheet_id": sheet_id})
+        print(f"Upserted into {target_db}.{target_col}: inserted={summary['inserted']} updated={summary['updated']} "
+              f"unchanged={summary['unchanged']} removed_placeholders={summary['removed_placeholders']}")
         return summary
     finally:
         client.close()

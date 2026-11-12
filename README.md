@@ -64,6 +64,9 @@ Render's free plan sleeps after ~15 min without traffic and a sleeping server ha
   The code waits `CRM_SETTLE_SECONDS` (default 30) before the agent first looks, and a lead the CRM
   still cannot find is retried after 30 s and 60 s instead of being marked failed.
 
+- The upload writes only rows that are new or really changed (`inserted` / `updated` / `unchanged` in the result are
+  exact). A phone-less row that later got its phone leaves an empty copy behind; the next sync removes it
+  (`removed_placeholders`), unless that copy already became a CRM customer.
 - A lead goes back to the agent only when its profile data changes. Row position and call/admin
   columns (call status, attempt, timestamps, campaign) do not count as a change.
 - The sheet must be shared as "Anyone with the link can view" so `sync.py` can download it.
