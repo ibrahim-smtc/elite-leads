@@ -9,7 +9,7 @@ Turn it on by setting AUTO_SYNC_SHEET_URL (the sheet link). Leave it unset and t
 import os
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from lead_to_crm import count_pending, process_pending
 from sync import sync_sheet
@@ -28,8 +28,11 @@ STATE = {"enabled": bool(SHEET_URL), "every_minutes": MINUTES, "runs": 0,
 _started = False
 
 
+IST = timezone(timedelta(hours=5, minutes=30))
+
+
 def _now():
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    return datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST")
 
 
 def run_once():
