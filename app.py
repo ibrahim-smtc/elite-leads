@@ -8,6 +8,7 @@ import os
 from fastapi import BackgroundTasks, Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel
 import uvicorn
+import auto_sync
 from sync import sync_sheet
 from lead_to_crm import BATCH_SIZE, MAX_PER_RUN, SETTLE_SECONDS, count_pending, process_pending
 
@@ -26,6 +27,11 @@ app = FastAPI(
     title="Google Sheets to MongoDB Sync API",
     version="1.0.0"
 )
+
+
+@app.on_event("startup")
+def start_timer():
+    auto_sync.start()      # only runs when AUTO_SYNC_SHEET_URL is set
 
 # Request schema: accepts any Google Sheet link
 class SheetSyncRequest(BaseModel):
@@ -77,6 +83,7 @@ def health():
         "leads_per_agent_call": BATCH_SIZE,
         "sync_secret_required": bool(SYNC_SECRET),
         "settle_seconds": SETTLE_SECONDS,
+        "auto_sync": auto_sync.STATE,          # timer on/off, last run time, last result or error
         "commit": os.getenv("RENDER_GIT_COMMIT", "local")[:7],  # which version of the code is running
     }
 

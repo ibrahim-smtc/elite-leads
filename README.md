@@ -19,6 +19,7 @@ POST /sync (sheet link)
 | File | Purpose |
 |---|---|
 | `app.py` | FastAPI service. `POST /sync` uploads the sheet, then starts the CRM step in the background |
+| `auto_sync.py` | Timer: every `AUTO_SYNC_MINUTES` the server downloads the sheet and runs the same steps as `/sync` |
 | `sync.py` | Sheet -> MongoDB upload |
 | `lead_to_crm.py` | Change detection, queue, CRM customer creation, calls the Perfox agent |
 | `.env.example` | All settings (copy to `.env`, never commit `.env`) |
@@ -44,6 +45,15 @@ python lead_to_crm.py --baseline --live        # mark leads already in Mongo as 
   `elite-test-db` and `og-leads` (or `MONGODB_DB` / `MONGODB_COLLECTION` when set).
 - If `SYNC_SECRET` is set, `/sync` requires a matching `X-Sync-Secret` header. If it is unset,
   `/sync` is open to anyone who knows the URL: fine for testing, set it before production.
+
+## Automatic sync (no Apps Script)
+
+Set `AUTO_SYNC_SHEET_URL` (the sheet link) on the server. Every `AUTO_SYNC_MINUTES` (default 10) it
+downloads the latest sheet, updates MongoDB, and sends new/changed leads to the agent (same cap of
+`CRM_MAX_PER_RUN`). If nothing is pending, the agent is not called, so no tokens are used.
+`GET /health` shows `auto_sync`: on/off, last run time, last result or error.
+Render's free plan sleeps after ~15 min without traffic and a sleeping server has no timer, so ping
+`/health` every 10 min from a free pinger (cron-job.org or UptimeRobot) to keep it awake.
 
 ## Notes
 
