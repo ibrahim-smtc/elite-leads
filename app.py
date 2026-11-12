@@ -12,7 +12,7 @@ import auto_sync
 from sync import sync_sheet
 from lead_to_crm import BATCH_SIZE, MAX_PER_RUN, SETTLE_SECONDS, count_pending, process_pending
 
-# Shared secret the caller (the Google Apps Script on the sheet) sends in the X-Sync-Secret header.
+# Shared secret the caller (Postman, the timer, or any caller) sends in the X-Sync-Secret header.
 # Without it, anyone who knows the URL could start agent runs (tokens) or write to any collection.
 SYNC_SECRET = os.getenv("SYNC_SECRET")
 if not SYNC_SECRET:

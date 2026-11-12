@@ -46,7 +46,7 @@ python lead_to_crm.py --baseline --live        # mark leads already in Mongo as 
 - If `SYNC_SECRET` is set, `/sync` requires a matching `X-Sync-Secret` header. If it is unset,
   `/sync` is open to anyone who knows the URL: fine for testing, set it before production.
 
-## Automatic sync (no Apps Script)
+## Automatic sync
 
 Set `AUTO_SYNC_SHEET_URL` (the sheet link) on the server. Every `AUTO_SYNC_MINUTES` (default 10) it
 downloads the latest sheet, updates MongoDB, and sends new/changed leads to the agent (same cap of
