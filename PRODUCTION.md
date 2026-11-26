@@ -54,7 +54,7 @@ Lead in the CRM
 | Setting | Value |
 |---|---|
 | Build command | `pip install -r requirements.txt` |
-| Start command | `uvicorn sheets_connector.main:app --host 0.0.0.0 --port $PORT` (the older `uvicorn app:app ...` also works) |
+| Start command | `uvicorn sheets_connector.server:app --host 0.0.0.0 --port $PORT` (the older `uvicorn app:app ...` also works) |
 | Python | `.python-version` (3.12.10) |
 | Plan | A paid, always-on instance. A free one sleeps and the schedule stops. |
 
@@ -160,7 +160,7 @@ Per-sheet settings:
 
 - **More sheets:** raise `WORKER_CONCURRENCY` (sheets synced at once per process), or run more workers.
 - **Separate API and workers:** run the API with `SCHEDULER_ENABLED=false`, and N workers with
-  `python -m sheets_connector.main worker`. Leases keep them from overlapping, and a crashed worker's
+  `python -m sheets_connector.server worker`. Leases keep them from overlapping, and a crashed worker's
   sheet is picked up again when its lease (`LEASE_SECONDS`, default 15 min) runs out.
 - **Protect the CRM:** `CRM_CONCURRENCY` (parallel posts per sync) and `CRM_MAX_REQUESTS_PER_SECOND` (per process).
 - **Large sheets:** one sheet is downloaded as one CSV file per check. Row states are kept per sheet in MongoDB, with one
@@ -187,6 +187,17 @@ Per-sheet settings:
   them. Check that the reviewer agent is published and its schedule is on.
 - **Send everything again:** `PATCH` with a changed `id_columns`, or delete and register the sheet again.
   The CRM removes duplicates of identical records.
+
+## Code map
+
+`sheets_connector/` has four files:
+
+| File | What is in it |
+|---|---|
+| `settings.py` | Settings from environment variables, and JSON logging. |
+| `sheets.py` | Downloading a public sheet, and turning any layout of rows into CRM records (row identity, phone detection, change detection). |
+| `sync.py` | Posting to the CRM (retries, rate limit), the MongoDB state, and one sync of one sheet. |
+| `server.py` | The timer, the HTTP API (`/v1/ingest`, `/v1/sheets`...) and the entry points. |
 
 ## Tests
 

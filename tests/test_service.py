@@ -2,7 +2,7 @@ from datetime import timedelta
 
 from conftest import REVSPOT_HEADERS, SHEET_ID, URL, revspot_row
 from sheets_connector.sheets import SheetReadError
-from sheets_connector.store import new_source_id, utcnow
+from sheets_connector.sync import new_source_id, utcnow
 
 OWNER = "test-worker"
 

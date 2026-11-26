@@ -1,8 +1,8 @@
 import httpx
 import pytest
 
-from sheets_connector.config import CRMProfile
-from sheets_connector.crm import (CRMConfigError, CRMRejectedError, CRMUnavailableError, RateLimiter,
+from sheets_connector.settings import CRMProfile
+from sheets_connector.sync import (CRMConfigError, CRMRejectedError, CRMUnavailableError, RateLimiter,
                                   RecordsClient)
 
 PROFILE = CRMProfile("default", "https://crm.example/records", "src_key_123")

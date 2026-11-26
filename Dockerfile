@@ -14,5 +14,5 @@ USER app
 
 EXPOSE 8000
 # API + scheduler in one process. To scale out: SCHEDULER_ENABLED=false here, and run
-# workers with:  python -m sheets_connector.main worker
-CMD ["sh", "-c", "uvicorn sheets_connector.main:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers"]
+# workers with:  python -m sheets_connector.server worker
+CMD ["sh", "-c", "uvicorn sheets_connector.server:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers"]

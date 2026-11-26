@@ -1,28 +1,95 @@
-"""
-HTTP API: register Google Sheets, see how each one is doing, and trigger a sync.
+"""The timer, the HTTP API, and the entry points (API + timer in one process, or a worker).
 
-Every /v1 route needs the X-Api-Key header (ADMIN_API_KEY). /health and /ready are open for the
-platform's health checks and reveal nothing.
-"""
+  API + timer in one process:  uvicorn sheets_connector.server:app --host 0.0.0.0 --port $PORT
+  Scaled out:  run the API with SCHEDULER_ENABLED=false, and workers with
+               python -m sheets_connector.server worker"""
 from __future__ import annotations
 
 import hmac
 import logging
+import os
+import signal
+import socket
+import sys
+import threading
+import uuid
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime
-
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
+from dotenv import load_dotenv
+from fastapi import Depends, FastAPI, HTTPException, Header, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 
 from . import __version__
-from .config import Settings
-from .rows import PlanError, mask
-from .scheduler import Scheduler
-from .service import SyncService, plan_for
-from .sheets import PublicSheetReader, SheetReadError, parse_sheet_url
-from .store import DuplicateSourceError, MongoStore, SourceNotFound, new_source_id, utcnow
+from .settings import ConfigError, Settings, setup_logging
+from .sheets import PlanError, PublicSheetReader, SheetReadError, mask, parse_sheet_url
+from .sync import DuplicateSourceError, MongoStore, SourceNotFound, SyncService, new_source_id, plan_for, utcnow
+
+
+log = logging.getLogger(__name__)
+
+
+class Scheduler:
+    def __init__(self, store, service: SyncService, settings: Settings, owner: str | None = None):
+        self.store, self.service, self.settings = store, service, settings
+        self.owner = owner or f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:6]}"
+        self._stop = threading.Event()
+        self._running = 0
+        self._lock = threading.Lock()
+        self._pool = ThreadPoolExecutor(max_workers=settings.worker_concurrency, thread_name_prefix="sheet-sync")
+        self._thread: threading.Thread | None = None
+
+    @property
+    def running(self) -> int:
+        with self._lock:
+            return self._running
+
+    def start(self) -> None:
+        if self._thread:
+            return
+        self._thread = threading.Thread(target=self._loop, name="scheduler", daemon=True)
+        self._thread.start()
+        log.info("scheduler started", extra={"owner": self.owner, "workers": self.settings.worker_concurrency})
+
+    def stop(self, timeout: float = 30.0) -> None:
+        """Stop claiming new work and let running syncs finish (their leases expire if we are killed)."""
+        self._stop.set()
+        if self._thread:
+            self._thread.join(timeout)
+        self._pool.shutdown(wait=True, cancel_futures=True)
+        log.info("scheduler stopped", extra={"owner": self.owner})
+
+    def tick(self) -> int:
+        """Claim and start as many due sheets as there are free workers. Returns how many were started."""
+        started = 0
+        while not self._stop.is_set() and self.running < self.settings.worker_concurrency:
+            try:
+                source = self.store.claim_due_source(self.owner, utcnow(), self.settings.lease_seconds)
+            except Exception:
+                log.exception("could not claim work (database unavailable?)")
+                break
+            if source is None:
+                break
+            with self._lock:
+                self._running += 1
+            self._pool.submit(self._run, source)
+            started += 1
+        return started
+
+    def _run(self, source: dict) -> None:
+        try:
+            self.service.run_source(source, self.owner)
+        finally:
+            with self._lock:
+                self._running -= 1
+
+    def _loop(self) -> None:
+        while not self._stop.is_set():
+            self.tick()
+            self._stop.wait(self.settings.tick_seconds)
+
 
 log = logging.getLogger(__name__)
 ROW_STATUSES = {"sent", "rejected", "failed", "dead", "waiting_contact"}
@@ -310,3 +377,41 @@ def create_app(settings: Settings | None = None, *, components: Components | Non
         return {"rows": [_jsonable(r) for r in store.list_rows(source_id, status, limit)]}
 
     return app
+
+
+load_dotenv()
+log = logging.getLogger("sheets_connector")
+
+
+def _settings() -> Settings:
+    settings = Settings.from_env()
+    setup_logging(settings.log_level)
+    try:
+        for warning in settings.validate():
+            log.warning(warning)
+    except ConfigError as exc:
+        log.error("cannot start: %s", exc)
+        raise SystemExit(2) from exc
+    return settings
+
+
+def run_worker() -> None:
+    """Scheduler only, no HTTP. Stops cleanly on SIGTERM / Ctrl+C."""
+    settings = _settings()
+    comp = build_components(settings, with_scheduler=True)
+    comp.store.ensure_indexes()
+    register_env_sheets(settings, comp.store)
+    stop = threading.Event()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        signal.signal(sig, lambda *_: stop.set())
+    comp.scheduler.start()
+    while not stop.wait(1.0):     # short waits keep Ctrl+C responsive on Windows
+        pass
+    comp.scheduler.stop()
+    comp.store.close()
+
+
+if __name__ == "__main__" and sys.argv[1:2] == ["worker"]:
+    run_worker()
+else:
+    app = create_app(_settings())

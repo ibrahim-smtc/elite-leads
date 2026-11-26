@@ -9,7 +9,7 @@ from datetime import timedelta
 import pytest
 
 from conftest import REVSPOT_HEADERS, SHEET_ID, revspot_row
-from sheets_connector.store import DuplicateSourceError, MongoStore, SourceNotFound, utcnow
+from sheets_connector.sync import DuplicateSourceError, MongoStore, SourceNotFound, utcnow
 from test_service import add_source, run
 
 URI = os.getenv("TEST_MONGODB_URI")

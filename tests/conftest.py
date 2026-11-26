@@ -10,11 +10,11 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from sheets_connector.config import CRMProfile, Settings  # noqa: E402
-from sheets_connector.crm import RecordsClient  # noqa: E402
-from sheets_connector.service import SyncService  # noqa: E402
+from sheets_connector.settings import CRMProfile, Settings  # noqa: E402
+from sheets_connector.sync import RecordsClient  # noqa: E402
+from sheets_connector.sync import SyncService  # noqa: E402
 from sheets_connector.sheets import SheetData, SheetReadError  # noqa: E402
-from sheets_connector.store import InMemoryStore  # noqa: E402
+from sheets_connector.sync import InMemoryStore  # noqa: E402
 
 SHEET_ID = "1RDng896zQ7uLC4y3aA6RxPtzYU4MxZDQwrsKDNoR5og"
 URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit#gid=0"

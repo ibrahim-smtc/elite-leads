@@ -1,7 +1,7 @@
 import pytest
 
 from conftest import REVSPOT_HEADERS, SHEET_ID, revspot_row
-from sheets_connector.rows import PlanError, clean_value, mask, normalize_headers, plan_rows
+from sheets_connector.sheets import PlanError, clean_value, mask, normalize_headers, plan_rows
 from sheets_connector.sheets import parse_sheet_url
 
 

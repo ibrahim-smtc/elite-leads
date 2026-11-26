@@ -2,7 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from conftest import REVSPOT_HEADERS, SHEET_ID, URL, make_settings, revspot_row
-from sheets_connector.api import Components, create_app
+from sheets_connector.server import Components, create_app
 from sheets_connector.sheets import SheetReadError
 
 KEY = {"X-Api-Key": "test-admin-key-0123456789abcd"}
@@ -81,7 +81,7 @@ def test_full_cycle_get_patch_sync_rows_delete(client, store, crm, make_service)
 
 
 def test_settings_validation():
-    from sheets_connector.config import ConfigError, CRMProfile
+    from sheets_connector.settings import ConfigError, CRMProfile
     with pytest.raises(ConfigError):
         make_settings(environment="production", admin_api_key="short").validate()
     with pytest.raises(ConfigError):
@@ -90,7 +90,7 @@ def test_settings_validation():
 
 
 def test_render_defaults_to_production(monkeypatch):
-    from sheets_connector.config import Settings
+    from sheets_connector.settings import Settings
     monkeypatch.delenv("APP_ENV", raising=False)
     monkeypatch.delenv("RENDER", raising=False)
     assert Settings.from_env().environment == "development"
@@ -100,7 +100,7 @@ def test_render_defaults_to_production(monkeypatch):
 
 def test_sheets_from_the_environment_are_registered_once_and_paused_when_removed(store, monkeypatch):
     from dataclasses import replace
-    from sheets_connector.api import register_env_sheets
+    from sheets_connector.server import register_env_sheets
     a = "https://docs.google.com/spreadsheets/d/AAAAAAAAAAAAAAAAAAAAAAAA/edit?gid=0#gid=0"
     b = "https://docs.google.com/spreadsheets/d/BBBBBBBBBBBBBBBBBBBBBBBB/edit#gid=5"
     both = replace(make_settings(), sheet_urls=(a, b))
@@ -115,7 +115,7 @@ def test_sheets_from_the_environment_are_registered_once_and_paused_when_removed
 
 
 def test_sheet_url_setting_parses_one_or_many(monkeypatch):
-    from sheets_connector.config import ConfigError, Settings
+    from sheets_connector.settings import ConfigError, Settings
     u1 = "https://docs.google.com/spreadsheets/d/AAAAAAAAAAAAAAAAAAAAAAAA/edit"
     u2 = "https://docs.google.com/spreadsheets/d/BBBBBBBBBBBBBBBBBBBBBBBB/edit"
     monkeypatch.setenv("SHEET_URL", u1)

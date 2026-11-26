@@ -12,4 +12,4 @@ Dockerfile          container image
 ```
 
 Run locally: `pip install -r requirements-dev.txt`, copy `.env.example` to `.env`, then
-`uvicorn sheets_connector.main:app --port 8000` and open http://127.0.0.1:8000/docs.
+`uvicorn sheets_connector.server:app --port 8000` and open http://127.0.0.1:8000/docs.
