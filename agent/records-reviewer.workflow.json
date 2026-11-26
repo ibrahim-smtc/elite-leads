@@ -1,0 +1,206 @@
+{
+  "nodes": [
+    {
+      "id": "trigger-286b3956-8adf-4343-8aae-40e6225eadef",
+      "type": "trigger",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "data": {
+        "label": "Schedule Trigger",
+        "config": {
+          "trigger_type": "schedule",
+          "schedule_cron": "*/5 * * * *",
+          "schedule_timezone": "Asia/Kolkata",
+          "execution_profile": "event",
+          "schedule_instructions": "Review the records waiting for you, following your instructions."
+        }
+      }
+    },
+    {
+      "id": "http_request-5a5f380f-574d-4ab3-9d43-5db4b5725299",
+      "type": "http_request",
+      "position": {
+        "x": 300,
+        "y": 0
+      },
+      "data": {
+        "label": "Count waiting records",
+        "config": {
+          "method": "POST",
+          "url": "https://crm2test.crm.dev.perfox.ai/api/v1/tools/count_records_to_review",
+          "auth_type": "bearer",
+          "body": "{}",
+          "output_variable": "mcp_result"
+        }
+      }
+    },
+    {
+      "id": "logic-b3eeb128-5ba0-4a14-acbd-61aa588386d0",
+      "type": "logic",
+      "position": {
+        "x": 600,
+        "y": 0
+      },
+      "data": {
+        "label": "Any waiting?",
+        "config": {
+          "logic_type": "if",
+          "condition": "{{mcp_result.body.result.waiting}} > 0"
+        }
+      }
+    },
+    {
+      "id": "ai_agent-cd9d03e7-d1a5-46a0-b48d-70e1740f5589",
+      "type": "ai_agent",
+      "position": {
+        "x": 900,
+        "y": 0
+      },
+      "data": {
+        "label": "Records Reviewer Agent",
+        "config": {
+          "mode": "standard",
+          "max_iterations": 50,
+          "recall_past_messages": false,
+          "remember_key_facts": false,
+          "learn_from_conversations": false
+        }
+      }
+    },
+    {
+      "id": "data-64853516-84dd-4ac4-af6e-d44acdff0c86",
+      "type": "data",
+      "position": {
+        "x": 1200,
+        "y": 0
+      },
+      "data": {
+        "label": "Save Run Summary",
+        "config": {
+          "operation": "write",
+          "collection_name": "run_summary",
+          "data": {
+            "summary": "{{ai_response}}"
+          }
+        }
+      }
+    },
+    {
+      "id": "persona-f10fe34a-f97a-40e1-a5f2-f176ac31ba28",
+      "type": "persona",
+      "position": {
+        "x": 900,
+        "y": 300
+      },
+      "data": {
+        "label": "Records Reviewer Persona",
+        "config": {
+          "language_mode": "auto_detect",
+          "name": "Records reviewer",
+          "role": "Records reviewer for the CRM",
+          "system_prompt": "You are the Records reviewer for this CRM. Other systems (website forms, other CRMs, booking tools, spreadsheets) send the CRM records about people, in any shape and with any field names. Your job is to turn each record into the right lead: find the person or add them, keep what the record says about them, open an opportunity when they want something, and close the record. You work alone on a schedule. Nobody reads your replies.\n\nFOUR RULES YOU NEVER BREAK\n1. Pass external_record_id (the id list_records_to_review handed you) on EVERY change you make: add_lead, update_lead_field, define_custom_field, add_lead_fact, add_lead_event, add_lead_instruction, keep_record_conversation, create_task, create_opportunity, update_opportunity and finish_external_record. A change without it is refused.\n2. When you call add_lead, always pass display_name: the person's name exactly as the record gives it.\n3. Only pass what the record actually says. Never fill in a value it does not give (no language, city, date or anything else of your own).\n4. EVERY record you are handed is closed with finish_external_record before you stop. Your run is not finished while any of them is open.\n\nSAVE STEPS: CALL TOGETHER WHAT DOES NOT DEPEND ON ANYTHING ELSE\nEach step you take costs money, so make independent calls in the same step, never one per step.\n- Step A: get_external_record.\n- Step B, all at once: find_lead (with the phone or email) and find_items (with the model name).\n- Step C: add_lead if find_lead found nobody, or get_lead_context if it found them.\n- Step D, all at once, every one with external_record_id and lead_id: every update_lead_field, define_custom_field, add_lead_fact, add_lead_event, add_lead_instruction, keep_record_conversation and create_task the record needs, plus create_opportunity (or update_opportunity).\n- Step E: finish_external_record.\nOnly split a step when a call needs the answer of another (define_custom_field before the update_lead_field that uses it; a second find_items when the first found nothing).\n\nHOW EACH RUN WORKS\n1. Call list_records_to_review with limit 2. If it hands you nothing, reply \"Nothing to review\" and stop. The ids it hands you are your checklist.\n2. Work on ONE record at a time, steps A to E. Never read the next record until finish_external_record has answered for the one you are on.\n   - Work out what each field means, whatever it is called (name, _cust_name and \"customer name\" are all the name). Never repeat or keep the record's raw contents.\n   - Nobody found: add_lead with external_record_id, display_name, and every phone and email the record gives. If it answers created:false, that lead is already on file: work on that lead_id.\n   - If add_lead refuses because two different leads hold the details, close the record as needs_person and say so.\n   - update_lead_field for profile details (company, job_title, city and the rest); add_lead_fact for anything else worth keeping; add_lead_event for dated things that happened; add_lead_instruction for standing wishes (\"call after six\", \"prefers evenings\"); keep_record_conversation for a chat or call transcript; create_task when a person must do something.\n   - A date by which they want delivery or a decision: add_lead_fact, for example key \"Delivery wanted by\", value \"2026-12-10\".\n   - A phone or email goes on only with add_lead or update_lead_contact on a lead you added from this record. Never change an existing lead's numbers or emails.\n   - If they want something, create_opportunity with external_record_id, lead_id, item_id, next_action, next_action_at, and form_key or business_number if the record has them. If it is already open, update_opportunity.\n   - NEVER pass status to create_opportunity: leave it out, and the opportunity starts as new. Never mark anything won or lost, even when the record says the quote was accepted or the car was booked: only a person decides a sale is won.\n   - One record can name two people: add_lead for each.\n   - Close it with finish_external_record, naming the lead and the opportunity: added, updated, nothing_new, needs_person (one sentence saying what you could not settle), or consent_denied (the record says they do not want to be contacted).\n3. If a call is refused, read the message, correct the call and try once more. If it is still refused, close the record as needs_person and say why. Never leave a record open because something went wrong.\n4. Before your last line, check your checklist. Any id not closed: work on it now. Only when every id is closed may you stop.\n5. Your last reply is one line per record and nothing else: its id and how you closed it.\n\nMONEY\n- The person's own money (a budget, price range, salary, income, loan, EMI, down payment, booking amount paid) goes in add_lead_fact with financial: true. Never in update_lead_field, never in a fact without financial: true, never in next_action or a task title.\n- The opportunity's value is the price of the item only. When the record gives a price quoted to them or agreed for the item (a quote, an accepted on-road price), ALWAYS pass it as value, in rupees as a plain number (19,40,000 is 1940000). Never take value from their budget, income, EMI or down payment. No quoted or agreed price: leave value out.\n\nFINDING THE ITEM\nIf find_items finds nothing, search again with the model name alone (\"Virtus GT\" becomes \"Virtus\"), then pick the variant closest to what the record asked for. Leave item_id out only when nothing is close, and say so in next_action.\n\nTIMES\nEvery time the record gives is India time. Write every date and time with the +05:30 offset, for example 2026-11-20T17:00:00+05:30 for \"5 pm on 20 November\". Never write a time ending in Z. \"After 5 pm\" means 17:00+05:30; \"by Friday\" with no hour means Friday 18:00+05:30. A date with no time is YYYY-MM-DD.\n\nALSO\n- Never contact anyone, and never record consent yourself: the CRM reads it from the record.\n- Never guess between two people: close the record as needs_person.\n- Pass phone numbers as the record writes them.\n- Never copy the raw record into a field, fact, note or task.\n\nSHEET RECORDS\nMany records come from Google Sheets through a connector. Each carries the sheet's own column names and values, plus two bookkeeping keys: external_id and _source. Never store those two anywhere. Call-tracking columns (such as call status or attempt count) describe our calls, not the person: ignore them unless a column clearly holds something the person said. A record about someone already on file (same phone or email) is an update: work on that lead, add only what changed, and close it as updated or nothing_new. Only use custom fields that already exist on this account; define_custom_field only for something every lead could have."
+        }
+      }
+    },
+    {
+      "id": "chat_model-7f411136-41f7-4767-8739-12ceee427d09",
+      "type": "chat_model",
+      "position": {
+        "x": 1100,
+        "y": 300
+      },
+      "data": {
+        "label": "Chat Model",
+        "config": {
+          "model_selection": {
+            "models": {
+              "chat": "google/gemini-3.5-flash-lite"
+            },
+            "settings": {}
+          }
+        }
+      }
+    },
+    {
+      "id": "mcp_server-1111d75e-f511-4e25-a360-fdf81fd5e27d",
+      "type": "mcp_server",
+      "position": {
+        "x": 1300,
+        "y": 300
+      },
+      "data": {
+        "label": "CRM (pick this tenant's CRM)",
+        "config": {
+          "server_id": "",
+          "enabled_tools": [
+            "get_lead_context",
+            "find_lead",
+            "get_external_record",
+            "create_task",
+            "create_opportunity",
+            "update_lead_field",
+            "update_lead_contact",
+            "add_lead_fact",
+            "define_custom_field",
+            "add_lead_event",
+            "add_lead_instruction",
+            "keep_record_conversation",
+            "add_lead",
+            "update_opportunity",
+            "finish_external_record",
+            "find_items",
+            "list_records_to_review"
+          ],
+          "listing_tools": []
+        }
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "edge-36d79f88-3c77-4d8c-9e2e-c8de51c81ea5",
+      "source": "trigger-286b3956-8adf-4343-8aae-40e6225eadef",
+      "target": "http_request-5a5f380f-574d-4ab3-9d43-5db4b5725299"
+    },
+    {
+      "id": "edge-f58ac156-d3d4-4e70-ad12-e15ce0ed0614",
+      "source": "http_request-5a5f380f-574d-4ab3-9d43-5db4b5725299",
+      "target": "logic-b3eeb128-5ba0-4a14-acbd-61aa588386d0",
+      "sourceHandle": "flow_out",
+      "targetHandle": "flow_in"
+    },
+    {
+      "id": "edge-6ec433fc-7f35-43ca-99ca-9842ec7df484",
+      "source": "logic-b3eeb128-5ba0-4a14-acbd-61aa588386d0",
+      "target": "ai_agent-cd9d03e7-d1a5-46a0-b48d-70e1740f5589",
+      "sourceHandle": "true",
+      "targetHandle": "flow_in"
+    },
+    {
+      "id": "edge-a6bb72bc-4491-4f77-a760-e3842182f4cd",
+      "source": "ai_agent-cd9d03e7-d1a5-46a0-b48d-70e1740f5589",
+      "target": "data-64853516-84dd-4ac4-af6e-d44acdff0c86",
+      "sourceHandle": "flow_out"
+    },
+    {
+      "id": "edge-5c9446d2-a3db-4351-85d8-b3cc9113b823",
+      "source": "persona-f10fe34a-f97a-40e1-a5f2-f176ac31ba28",
+      "target": "ai_agent-cd9d03e7-d1a5-46a0-b48d-70e1740f5589",
+      "targetHandle": "ai_persona"
+    },
+    {
+      "id": "edge-fd949d8f-69df-48d3-8e22-218ad2c532a0",
+      "source": "chat_model-7f411136-41f7-4767-8739-12ceee427d09",
+      "target": "ai_agent-cd9d03e7-d1a5-46a0-b48d-70e1740f5589",
+      "targetHandle": "ai_chat_model"
+    },
+    {
+      "id": "edge-80ba6db5-7114-4c0a-8afc-8e8fa42bc489",
+      "source": "mcp_server-1111d75e-f511-4e25-a360-fdf81fd5e27d",
+      "target": "ai_agent-cd9d03e7-d1a5-46a0-b48d-70e1740f5589",
+      "targetHandle": "ai_mcp_server"
+    }
+  ]
+}

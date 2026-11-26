@@ -3,3 +3,4 @@ node_modules/
 
 __pycache__/
 crm_agent_runs.jsonl
+.pytest_cache/
