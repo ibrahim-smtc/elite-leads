@@ -44,13 +44,13 @@ class SyncService:
             for name, p in settings.crm_profiles.items()}
 
     # ------------------------------------------------------------------ entry point
-    def run_source(self, source: dict, owner: str) -> dict:
+    def run_source(self, source: dict, owner: str, limit: int | None = None) -> dict:
         started = self.clock()
         t0 = time.monotonic()
         sid = source["_id"]
         poll = timedelta(minutes=source.get("poll_minutes") or self.settings.default_poll_minutes)
         try:
-            summary = self._sync(source, owner)
+            summary = self._sync(source, owner, limit)
         except (SheetReadError, PlanError, CRMConfigError) as exc:
             permanent = not isinstance(exc, SheetReadError) or exc.permanent
             return self._fail(source, owner, started, t0, str(exc), permanent)
@@ -80,12 +80,12 @@ class SyncService:
         return last_run
 
     # ------------------------------------------------------------------ the work
-    def _sync(self, source: dict, owner: str) -> dict:
+    def _sync(self, source: dict, owner: str, limit: int | None = None) -> dict:
         sid = source["_id"]
         ref = SheetRef(source["spreadsheet_id"], source["gid"] or None)
         data = self.reader.read(ref)
         nothing_pending = not (source.get("backlog") or source.get("pending_retries") or source.get("held"))
-        if data.change_token == source.get("change_token") and nothing_pending:
+        if limit is None and data.change_token == source.get("change_token") and nothing_pending:
             return {"skipped": "sheet unchanged", "change_token": data.change_token}
 
         plan = plan_for(source, data)
@@ -114,7 +114,10 @@ class SyncService:
             to_send.append((row, state))
 
         # MAX_ROWS_TOTAL: a hard limit on rows ever sent per sheet (0 = no limit). Rows beyond it are held, not queued.
-        total_limit = self.settings.max_rows_total
+        total_limit = 0 if limit else self.settings.max_rows_total
+        if limit:                                    # an explicit limit on this call (POST /v1/ingest)
+            counts["held_back"] = max(0, len(to_send) - limit)
+            to_send = to_send[:limit]
         if total_limit:
             used = sum(1 for st in states.values() if st.get("status") in ("sent", "rejected", "failed", "dead"))
             room = max(0, total_limit - used)

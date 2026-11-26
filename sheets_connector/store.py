@@ -96,6 +96,13 @@ class MongoStore:
             {"$set": {"lease_owner": owner, "lease_until": now + timedelta(seconds=lease_seconds)}},
             sort=[("next_run_at", ASCENDING)], return_document=ReturnDocument.AFTER)
 
+    def claim_source(self, source_id: str, owner: str, now: datetime, lease_seconds: int) -> dict | None:
+        """Take this one sheet for a run, unless another worker holds it."""
+        return self.sources.find_one_and_update(
+            {"_id": source_id, "$or": [{"lease_until": None}, {"lease_until": {"$lt": now}}]},
+            {"$set": {"lease_owner": owner, "lease_until": now + timedelta(seconds=lease_seconds)}},
+            return_document=ReturnDocument.AFTER)
+
     def renew_lease(self, source_id: str, owner: str, until: datetime) -> bool:
         return self.sources.update_one({"_id": source_id, "lease_owner": owner},
                                        {"$set": {"lease_until": until}}).matched_count == 1
@@ -187,6 +194,14 @@ class InMemoryStore:
             if not due:
                 return None
             src = min(due, key=lambda s: s["next_run_at"])
+            src.update(lease_owner=owner, lease_until=now + timedelta(seconds=lease_seconds))
+            return copy.deepcopy(src)
+
+    def claim_source(self, source_id: str, owner: str, now: datetime, lease_seconds: int) -> dict | None:
+        with self._lock:
+            src = self._sources.get(source_id)
+            if not src or (src.get("lease_until") is not None and src["lease_until"] >= now):
+                return None
             src.update(lease_owner=owner, lease_until=now + timedelta(seconds=lease_seconds))
             return copy.deepcopy(src)
 

@@ -124,3 +124,25 @@ def test_sheet_url_setting_parses_one_or_many(monkeypatch):
     monkeypatch.setenv("SHEET_URLS", "https://example.com/nope")
     with pytest.raises(ConfigError):
         Settings.from_env()
+
+
+def test_ingest_sends_only_the_limit_and_the_next_call_sends_more(client, reader, crm, store):
+    reader.tables[SHEET_ID] = [REVSPOT_HEADERS] + [revspot_row(f"L{i}", f"9198450{i:05d}") for i in range(7)]
+    r = client.post("/v1/ingest", json={"sheet_url": URL, "limit": 3}, headers=KEY)
+    assert r.status_code == 200, r.text
+    assert r.json()["sent_to_crm_inbox"] == 3 and r.json()["held_back_by_limit"] == 4 and r.json()["rows_in_sheet"] == 7
+    assert len(crm.received) == 3
+    again = client.post("/v1/ingest", json={"sheet_url": URL, "limit": 2}, headers=KEY).json()   # same, unchanged sheet
+    assert again["sent_to_crm_inbox"] == 2 and again["already_sent_before"] == 3 and again["held_back_by_limit"] == 2
+    assert len(crm.received) == 5
+    src = store.list_sources()[0]
+    assert src["enabled"] is False and src["lease_owner"] is None          # manual only; timer never touches it
+
+
+def test_ingest_needs_the_key_and_a_valid_body_and_reports_unreadable_sheets(client, reader):
+    assert client.post("/v1/ingest", json={"sheet_url": URL, "limit": 3}).status_code == 401
+    assert client.post("/v1/ingest", json={"sheet_url": URL, "limit": 0}, headers=KEY).status_code == 422
+    assert client.post("/v1/ingest", json={"sheet_url": "https://example.com", "limit": 3}, headers=KEY).status_code == 422
+    reader.error = SheetReadError("The sheet cannot be read. Check the link.", permanent=True)
+    r = client.post("/v1/ingest", json={"sheet_url": URL, "limit": 3}, headers=KEY)
+    assert r.status_code == 422 and "cannot be read" in r.json()["detail"]

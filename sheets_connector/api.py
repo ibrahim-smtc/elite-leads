@@ -56,6 +56,11 @@ class SheetSourceIn(_Common):
     check_now: bool = Field(True, description="Read the sheet before saving, and show what would be sent.")
 
 
+class IngestIn(BaseModel):
+    sheet_url: str = Field(..., description="Public Google Sheets link (anyone with the link can view).")
+    limit: int = Field(..., ge=1, le=500, description="Most rows to send to the CRM inbox in this call.")
+
+
 class SheetSourcePatch(BaseModel):
     name: str | None = Field(None, max_length=200)
     poll_minutes: float | None = Field(None, ge=1, le=1440)
@@ -229,6 +234,31 @@ def create_app(settings: Settings | None = None, *, components: Components | Non
             raise HTTPException(409, str(exc)) from exc
         log.info("sheet registered", extra={"source_id": doc["_id"], "spreadsheet_id": ref.spreadsheet_id})
         return {"source": _source_out(doc), "preview": preview}
+
+    @app.post("/v1/ingest", tags=["ingest"], dependencies=[Depends(require_key)])
+    def ingest(body: IngestIn, request: Request):
+        """Send up to `limit` new or edited rows of this sheet to the CRM inbox, now, and say what happened."""
+        comp = comp_of(request)
+        try:
+            ref = parse_sheet_url(body.sheet_url)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        source = next((s for s in comp.store.list_sources()
+                       if s["spreadsheet_id"] == ref.spreadsheet_id and s["gid"] == (ref.gid or "")), None)
+        if source is None:                                   # manual-only: the timer does not touch it
+            source = comp.store.create_source(new_source_doc(
+                body.sheet_url, ref, _Common().model_dump() | {"enabled": False, "manual": True}))
+        owner = f"ingest:{new_source_id()[:8]}"
+        claimed = comp.store.claim_source(source["_id"], owner, utcnow(), settings.lease_seconds)
+        if claimed is None:
+            raise HTTPException(409, "This sheet is being processed right now. Try again in a minute.")
+        result = comp.service.run_source(claimed, owner, limit=body.limit)
+        if result.get("status") != "ok":
+            raise HTTPException(502 if not result.get("permanent") else 422, result.get("error") or "sync failed")
+        return {"sheet": source["name"] or ref.spreadsheet_id, "rows_in_sheet": result.get("rows", 0),
+                "sent_to_crm_inbox": result.get("sent", 0), "held_back_by_limit": result.get("held_back", 0),
+                "already_sent_before": result.get("unchanged", 0), "waiting_for_phone_or_email": result.get("waiting_contact", 0),
+                "refused_by_crm": result.get("rejected", 0), "failed": result.get("failed", 0)}
 
     @app.get("/v1/sheets", tags=["sheets"], dependencies=[Depends(require_key)])
     def list_sheets(request: Request):

@@ -84,6 +84,19 @@ All are environment variables (Render: Environment tab):
 
 The API below is optional: use it for per-sheet settings or to add sheets without restarting.
 
+## The one call for a demo: POST /v1/ingest
+
+```
+POST https://<your-render-url>/v1/ingest
+Header: X-Api-Key: <ADMIN_API_KEY>
+Body:   {"sheet_url": "<public Google Sheet link>", "limit": 3}
+```
+
+Reads the sheet now and sends **at most `limit`** new or edited rows to the CRM inbox, then answers with what
+happened (`sent_to_crm_inbox`, `held_back_by_limit`, `already_sent_before`, ...). Rows already sent are never sent
+again, so calling it again with a higher limit sends the next ones. A sheet used only this way is manual: the timer
+never touches it.
+
 ## Using the API
 
 All `/v1` calls need the header `X-Api-Key: <ADMIN_API_KEY>`. Interactive docs are at `/docs`.
@@ -177,7 +190,7 @@ Per-sheet settings:
 
 ## Tests
 
-`pip install -r requirements-dev.txt` and run `pytest`. There are 55 tests: row planning, the CRM client
+`pip install -r requirements-dev.txt` and run `pytest`. There are 57 tests: row planning, the CRM client
 (retries, backoff, refusals), the sync engine (edits, moves, held rows, row cap, failures, leases) and the API.
 Set `TEST_MONGODB_URI` to also run the MongoDB tests. They use a throwaway database and clean it up.
 
