@@ -174,3 +174,28 @@ def test_row_data_is_stored_with_its_state(store, reader, crm, make_service):
     rows = {r["data"]["Name"]: r for r in store.list_rows(sid, None, 10)}
     assert rows["Jason"]["status"] == "sent" and rows["Jason"]["data"]["Preferred Model"] == "Virtus GT"
     assert rows["NoPhone"]["status"] == "waiting_contact"
+
+
+def test_total_limit_is_a_hard_stop_not_a_per_run_cap(store, reader, crm, make_service):
+    service, _ = make_service(max_rows_total=3)
+    reader.tables[SHEET_ID] = [REVSPOT_HEADERS] + [revspot_row(f"L{i}", f"9198450{i:05d}") for i in range(10)]
+    sid = add_source(store)
+    result, src = run(service, store, sid)
+    assert result["sent"] == 3 and result["held_by_total_limit"] == 7 and result["backlog"] == 0
+    assert src["next_run_at"] - src["last_run"]["started_at"] >= timedelta(minutes=5)       # no quick re-run
+    for _ in range(3):
+        result, _ = run(service, store, sid)
+    assert len(crm.received) == 3 and store.row_status_counts(sid) == {"sent": 3}
+
+
+def test_total_limit_counts_what_was_already_sent_and_zero_means_no_limit(store, reader, crm, make_service):
+    service, _ = make_service(max_rows_total=2, max_rows_per_sync=1)
+    reader.tables[SHEET_ID] = [REVSPOT_HEADERS] + [revspot_row(f"L{i}", f"9198450{i:05d}") for i in range(5)]
+    sid = add_source(store)
+    run(service, store, sid)
+    run(service, store, sid)
+    run(service, store, sid)
+    assert len(crm.received) == 2                      # 1 + 1, then the total of 2 is reached
+    service, _ = make_service(max_rows_total=0, max_rows_per_sync=100)
+    result, _ = run(service, store, sid)
+    assert result["sent"] == 3 and len(crm.received) == 5

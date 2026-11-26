@@ -71,7 +71,7 @@ The agent that turns records into leads runs inside Perfox, not in this service.
 Integration node, set the CRM bearer key on the HTTP node (left empty in the file on purpose), publish it, and select
 it on the CRM's Account -> Sources page. If you change the agent in Studio, export it and update the file.
 
-## The three settings you will change
+## The settings you will change
 
 All are environment variables (Render: Environment tab):
 
@@ -79,7 +79,8 @@ All are environment variables (Render: Environment tab):
 |---|---|---|
 | `SHEET_URL` (or `SHEET_URLS`, comma separated) | Which Google Sheet(s) to read. Public "anyone with the link can view" links. Added on the next start; a link removed is paused. | `https://docs.google.com/spreadsheets/d/<id>/edit?gid=0` |
 | `DEFAULT_POLL_MINUTES` | How often each sheet is checked. | `15` |
-| `MAX_ROWS_PER_SYNC` | Most rows sent to the CRM per run. The rest follow in the next runs. | `3` |
+| `MAX_ROWS_TOTAL` | **Hard limit**: the most rows ever sent per sheet (0 = no limit). Rows beyond it are held, and go out if you raise the limit. Use this for a demo. | `3` |
+| `MAX_ROWS_PER_SYNC` | Speed, not a limit: most rows sent per run. Without a total limit the rest follow in the next runs. | `200` |
 
 The API below is optional: use it for per-sheet settings or to add sheets without restarting.
 
@@ -176,7 +177,7 @@ Per-sheet settings:
 
 ## Tests
 
-`pip install -r requirements-dev.txt` and run `pytest`. There are 53 tests: row planning, the CRM client
+`pip install -r requirements-dev.txt` and run `pytest`. There are 55 tests: row planning, the CRM client
 (retries, backoff, refusals), the sync engine (edits, moves, held rows, row cap, failures, leases) and the API.
 Set `TEST_MONGODB_URI` to also run the MongoDB tests. They use a throwaway database and clean it up.
 

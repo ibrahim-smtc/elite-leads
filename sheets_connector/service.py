@@ -70,7 +70,8 @@ class SyncService:
         changes = {"status": status, "last_run": last_run, "last_error": summary.get("error"),
                    "next_run_at": next_run, "consecutive_failures": 0 if status == "ok" else
                    source.get("consecutive_failures", 0) + 1,
-                   "backlog": summary.get("backlog", 0), "pending_retries": summary.get("pending_retries", 0)}
+                   "backlog": summary.get("backlog", 0), "pending_retries": summary.get("pending_retries", 0),
+                   "held": summary.get("held_by_total_limit", 0)}
         if "change_token" in summary:
             changes["change_token"] = summary["change_token"]
         if not self.store.finish_run(sid, owner, changes):
@@ -83,7 +84,7 @@ class SyncService:
         sid = source["_id"]
         ref = SheetRef(source["spreadsheet_id"], source["gid"] or None)
         data = self.reader.read(ref)
-        nothing_pending = not source.get("backlog") and not source.get("pending_retries")
+        nothing_pending = not (source.get("backlog") or source.get("pending_retries") or source.get("held"))
         if data.change_token == source.get("change_token") and nothing_pending:
             return {"skipped": "sheet unchanged", "change_token": data.change_token}
 
@@ -111,6 +112,14 @@ class SyncService:
                 continue
             counts[reason] += 1
             to_send.append((row, state))
+
+        # MAX_ROWS_TOTAL: a hard limit on rows ever sent per sheet (0 = no limit). Rows beyond it are held, not queued.
+        total_limit = self.settings.max_rows_total
+        if total_limit:
+            used = sum(1 for st in states.values() if st.get("status") in ("sent", "rejected", "failed", "dead"))
+            room = max(0, total_limit - used)
+            counts["held_by_total_limit"] = max(0, len(to_send) - room)
+            to_send = to_send[:room]
 
         cap = self.settings.max_rows_per_sync
         backlog = max(0, len(to_send) - cap)

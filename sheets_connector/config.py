@@ -54,6 +54,7 @@ class Settings:
     sheet_urls: tuple[str, ...] = ()
     default_poll_minutes: float = 5.0
     max_rows_per_sync: int = 200
+    max_rows_total: int = 0
     max_attempts_per_row: int = 5
     crm_concurrency: int = 4
     crm_max_requests_per_second: float = 5.0
@@ -80,6 +81,7 @@ class Settings:
             sheet_urls=_sheet_urls(),
             default_poll_minutes=_number("DEFAULT_POLL_MINUTES", 5.0, float, 1),
             max_rows_per_sync=_number("MAX_ROWS_PER_SYNC", 200, int, 1),
+            max_rows_total=_number("MAX_ROWS_TOTAL", 0, int, 0),
             max_attempts_per_row=_number("MAX_ATTEMPTS_PER_ROW", 5, int, 1),
             crm_concurrency=_number("CRM_CONCURRENCY", 4, int, 1),
             crm_max_requests_per_second=_number("CRM_MAX_REQUESTS_PER_SECOND", 5.0, float, 0.1),
