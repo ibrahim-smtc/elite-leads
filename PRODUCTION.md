@@ -47,7 +47,7 @@ Lead in the CRM
 4. **Deploy** (Docker or Render) with the variables in `.env.example` (production section):
    `APP_ENV=production`, `MONGODB_URI`, `ADMIN_API_KEY`, `CRM_RECORDS_URL`, `CRM_SOURCE_KEY`. The service will not start if a required one is missing.
    Use an always-on instance. A free instance that sleeps also stops the schedule.
-5. **Register sheets** (below).
+5. **Set `SHEET_URL`** (above). Optionally register more sheets with the API (below).
 
 ## Deploy on Render
 
@@ -71,7 +71,19 @@ The agent that turns records into leads runs inside Perfox, not in this service.
 Integration node, set the CRM bearer key on the HTTP node (left empty in the file on purpose), publish it, and select
 it on the CRM's Account -> Sources page. If you change the agent in Studio, export it and update the file.
 
-## Using it
+## The three settings you will change
+
+All are environment variables (Render: Environment tab):
+
+| Variable | What it controls | Example |
+|---|---|---|
+| `SHEET_URL` (or `SHEET_URLS`, comma separated) | Which Google Sheet(s) to read. Public "anyone with the link can view" links. Added on the next start; a link removed is paused. | `https://docs.google.com/spreadsheets/d/<id>/edit?gid=0` |
+| `DEFAULT_POLL_MINUTES` | How often each sheet is checked. | `15` |
+| `MAX_ROWS_PER_SYNC` | Most rows sent to the CRM per run. The rest follow in the next runs. | `3` |
+
+The API below is optional: use it for per-sheet settings or to add sheets without restarting.
+
+## Using the API
 
 All `/v1` calls need the header `X-Api-Key: <ADMIN_API_KEY>`. Interactive docs are at `/docs`.
 
@@ -164,7 +176,7 @@ Per-sheet settings:
 
 ## Tests
 
-`pip install -r requirements-dev.txt` and run `pytest`. There are 50 tests: row planning, the CRM client
+`pip install -r requirements-dev.txt` and run `pytest`. There are 53 tests: row planning, the CRM client
 (retries, backoff, refusals), the sync engine (edits, moves, held rows, row cap, failures, leases) and the API.
 Set `TEST_MONGODB_URI` to also run the MongoDB tests. They use a throwaway database and clean it up.
 

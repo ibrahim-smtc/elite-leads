@@ -88,6 +88,43 @@ def build_components(settings: Settings, store=None, reader=None, service=None, 
     return Components(settings, store, reader, service, scheduler)
 
 
+def new_source_doc(url: str, ref, fields: dict) -> dict:
+    now = utcnow()
+    return {"_id": new_source_id(), "url": url, "spreadsheet_id": ref.spreadsheet_id, "gid": ref.gid or "",
+            **fields, "status": "new", "next_run_at": now, "lease_owner": None, "lease_until": None,
+            "consecutive_failures": 0, "backlog": 0, "pending_retries": 0, "change_token": None,
+            "last_run": None, "last_error": None, "created_at": now, "updated_at": now}
+
+
+def register_env_sheets(settings: Settings, store) -> list[str]:
+    """Make the sheets named in SHEET_URL / SHEET_URLS exist (and run). Safe to call on every start.
+
+    A sheet removed from the variable is paused, not deleted; put it back and it resumes.
+    """
+    wanted = {}
+    for url in settings.sheet_urls:
+        ref = parse_sheet_url(url)
+        wanted[(ref.spreadsheet_id, ref.gid or "")] = (url, ref)
+    existing = {(s["spreadsheet_id"], s["gid"]): s for s in store.list_sources()}
+    started = []
+    for key, (url, ref) in wanted.items():
+        found = existing.get(key)
+        if found is None:
+            fields = _Common().model_dump() | {"from_env": True}
+            store.create_source(new_source_doc(url, ref, fields))
+            started.append(url)
+        elif found.get("paused_by_env"):
+            store.update_source(found["_id"], {"enabled": True, "paused_by_env": False, "next_run_at": utcnow()})
+            started.append(url)
+    for key, found in existing.items():
+        if found.get("from_env") and key not in wanted and found.get("enabled"):
+            store.update_source(found["_id"], {"enabled": False, "paused_by_env": True})
+            log.info("sheet removed from SHEET_URL(S): paused", extra={"source_id": found["_id"]})
+    for url in started:
+        log.info("sheet from environment ready", extra={"spreadsheet_id": parse_sheet_url(url).spreadsheet_id})
+    return started
+
+
 def _jsonable(doc):
     if isinstance(doc, dict):
         return {k: _jsonable(v) for k, v in doc.items() if k not in ("lease_owner",)}
@@ -125,6 +162,7 @@ def create_app(settings: Settings | None = None, *, components: Components | Non
     async def lifespan(app: FastAPI):
         comp = app.state.components = components or build_components(settings)
         comp.store.ensure_indexes()
+        register_env_sheets(comp.settings, comp.store)
         if comp.scheduler:
             comp.scheduler.start()
         try:
@@ -181,12 +219,7 @@ def create_app(settings: Settings | None = None, *, components: Components | Non
             raise HTTPException(422, str(exc)) from exc
         if body.crm_profile not in settings.crm_profiles and settings.crm_profiles:
             raise HTTPException(422, f"Unknown crm_profile {body.crm_profile!r}. Known: {sorted(settings.crm_profiles)}")
-        now = utcnow()
-        doc = {"_id": new_source_id(), "url": body.url, "spreadsheet_id": ref.spreadsheet_id, "gid": ref.gid or "",
-               **body.model_dump(exclude={"url", "check_now"}),
-               "status": "new", "next_run_at": now, "lease_owner": None, "lease_until": None,
-               "consecutive_failures": 0, "backlog": 0, "pending_retries": 0, "change_token": None,
-               "last_run": None, "last_error": None, "created_at": now, "updated_at": now}
+        doc = new_source_doc(body.url, ref, body.model_dump(exclude={"url", "check_now"}))
         preview = _preview(comp, doc) if body.check_now else None
         if preview and not doc["name"]:
             doc["name"] = f"{preview['sheet_title']} / {preview['tab']}"

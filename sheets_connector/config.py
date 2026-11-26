@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import dataclass, field
 
 
@@ -50,6 +51,7 @@ class Settings:
     mongodb_db: str = "sheets_connector"
     admin_api_key: str | None = field(default=None, repr=False)
     crm_profiles: dict[str, CRMProfile] = field(default_factory=dict, repr=False)
+    sheet_urls: tuple[str, ...] = ()
     default_poll_minutes: float = 5.0
     max_rows_per_sync: int = 200
     max_attempts_per_row: int = 5
@@ -75,6 +77,7 @@ class Settings:
             mongodb_db=_env("CONNECTOR_MONGODB_DB", "sheets_connector"),
             admin_api_key=_env("ADMIN_API_KEY"),
             crm_profiles=_load_crm_profiles(),
+            sheet_urls=_sheet_urls(),
             default_poll_minutes=_number("DEFAULT_POLL_MINUTES", 5.0, float, 1),
             max_rows_per_sync=_number("MAX_ROWS_PER_SYNC", 200, int, 1),
             max_attempts_per_row=_number("MAX_ATTEMPTS_PER_ROW", 5, int, 1),
@@ -107,6 +110,16 @@ class Settings:
         elif not self.admin_api_key:
             warnings.append("ADMIN_API_KEY is not set: the API is open (development only).")
         return warnings
+
+
+def _sheet_urls() -> tuple[str, ...]:
+    """Sheet links from SHEET_URL (one) or SHEET_URLS (several, separated by commas, spaces or new lines)."""
+    raw = " ".join(filter(None, (_env("SHEET_URL"), _env("SHEET_URLS"))))
+    urls = [u for u in re.split(r"[\s,]+", raw) if u]
+    bad = [u for u in urls if "/spreadsheets/d/" not in u]
+    if bad:
+        raise ConfigError(f"SHEET_URL(S) contains something that is not a Google Sheets link: {bad[0][:80]!r}")
+    return tuple(dict.fromkeys(urls))
 
 
 def _load_crm_profiles() -> dict[str, CRMProfile]:

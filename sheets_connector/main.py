@@ -14,7 +14,7 @@ import threading
 
 from dotenv import load_dotenv
 
-from .api import build_components, create_app
+from .api import build_components, create_app, register_env_sheets
 from .config import ConfigError, Settings
 from .logs import setup_logging
 
@@ -39,6 +39,7 @@ def run_worker() -> None:
     settings = _settings()
     comp = build_components(settings, with_scheduler=True)
     comp.store.ensure_indexes()
+    register_env_sheets(settings, comp.store)
     stop = threading.Event()
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, lambda *_: stop.set())

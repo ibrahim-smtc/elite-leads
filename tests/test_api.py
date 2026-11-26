@@ -96,3 +96,31 @@ def test_render_defaults_to_production(monkeypatch):
     assert Settings.from_env().environment == "development"
     monkeypatch.setenv("RENDER", "true")
     assert Settings.from_env().is_production
+
+
+def test_sheets_from_the_environment_are_registered_once_and_paused_when_removed(store, monkeypatch):
+    from dataclasses import replace
+    from sheets_connector.api import register_env_sheets
+    a = "https://docs.google.com/spreadsheets/d/AAAAAAAAAAAAAAAAAAAAAAAA/edit?gid=0#gid=0"
+    b = "https://docs.google.com/spreadsheets/d/BBBBBBBBBBBBBBBBBBBBBBBB/edit#gid=5"
+    both = replace(make_settings(), sheet_urls=(a, b))
+    assert len(register_env_sheets(both, store)) == 2 and len(store.list_sources()) == 2
+    assert register_env_sheets(both, store) == []                     # restart: nothing duplicated
+    assert len(store.list_sources()) == 2
+    only_a = replace(make_settings(), sheet_urls=(a,))
+    register_env_sheets(only_a, store)                                # b removed from the variable
+    assert {s["spreadsheet_id"][0]: s["enabled"] for s in store.list_sources()} == {"A": True, "B": False}
+    assert len(register_env_sheets(both, store)) == 1                 # b put back: resumes
+    assert all(s["enabled"] for s in store.list_sources())
+
+
+def test_sheet_url_setting_parses_one_or_many(monkeypatch):
+    from sheets_connector.config import ConfigError, Settings
+    u1 = "https://docs.google.com/spreadsheets/d/AAAAAAAAAAAAAAAAAAAAAAAA/edit"
+    u2 = "https://docs.google.com/spreadsheets/d/BBBBBBBBBBBBBBBBBBBBBBBB/edit"
+    monkeypatch.setenv("SHEET_URL", u1)
+    monkeypatch.setenv("SHEET_URLS", f"{u1}, {u2}\n")
+    assert Settings.from_env().sheet_urls == (u1, u2)
+    monkeypatch.setenv("SHEET_URLS", "https://example.com/nope")
+    with pytest.raises(ConfigError):
+        Settings.from_env()
