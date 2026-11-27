@@ -98,7 +98,7 @@ ROW_STATUSES = {"sent", "rejected", "failed", "dead", "waiting_contact"}
 # ---------------------------------------------------------------------- request bodies
 class _Common(BaseModel):
     name: str | None = Field(None, max_length=200)
-    poll_minutes: float | None = Field(None, ge=1, le=1440, description="How often to check the sheet.")
+    poll_minutes: float | None = Field(None, ge=0.5, le=1440, description="How often to check the sheet.")
     header_row: int = Field(1, ge=1, le=100, description="Row that holds the column names.")
     id_columns: list[str] = Field(default_factory=list, max_length=5,
                                   description="Columns that identify a row (e.g. 'Lead ID'). Auto-detected if empty.")
@@ -130,7 +130,7 @@ class IngestIn(BaseModel):
 
 class SheetSourcePatch(BaseModel):
     name: str | None = Field(None, max_length=200)
-    poll_minutes: float | None = Field(None, ge=1, le=1440)
+    poll_minutes: float | None = Field(None, ge=0.5, le=1440)
     header_row: int | None = Field(None, ge=1, le=100)
     id_columns: list[str] | None = Field(None, max_length=5)
     ignore_columns: list[str] | None = Field(None, max_length=100)

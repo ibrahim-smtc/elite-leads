@@ -57,7 +57,7 @@ class Settings:
     admin_api_key: str | None = field(default=None, repr=False)
     crm_profiles: dict[str, CRMProfile] = field(default_factory=dict, repr=False)
     sheet_urls: tuple[str, ...] = ()
-    default_poll_minutes: float = 5.0
+    default_poll_minutes: float = 0.5          # 30 seconds; set with DEFAULT_POLL_SECONDS
     max_rows_per_sync: int = 200
     max_rows_total: int = 0
     max_attempts_per_row: int = 5
@@ -84,7 +84,7 @@ class Settings:
             admin_api_key=_env("ADMIN_API_KEY"),
             crm_profiles=_load_crm_profiles(),
             sheet_urls=_sheet_urls(),
-            default_poll_minutes=_number("DEFAULT_POLL_MINUTES", 5.0, float, 1),
+            default_poll_minutes=_number("DEFAULT_POLL_SECONDS", 30.0, float, 10) / 60,   # seconds in, minutes inside
             max_rows_per_sync=_number("MAX_ROWS_PER_SYNC", 200, int, 1),
             max_rows_total=_number("MAX_ROWS_TOTAL", 0, int, 0),
             max_attempts_per_row=_number("MAX_ATTEMPTS_PER_ROW", 5, int, 1),

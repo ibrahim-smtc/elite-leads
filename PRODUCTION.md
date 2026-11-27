@@ -78,7 +78,7 @@ All are environment variables (Render: Environment tab):
 | Variable | What it controls | Example |
 |---|---|---|
 | `SHEET_URL` (or `SHEET_URLS`, comma separated) | Which Google Sheet(s) to read. Public "anyone with the link can view" links. Added on the next start; a link removed is paused. | `https://docs.google.com/spreadsheets/d/<id>/edit?gid=0` |
-| `DEFAULT_POLL_MINUTES` | How often each sheet is checked. | `15` |
+| `DEFAULT_POLL_SECONDS` | How often each sheet is checked, in seconds (10 or more, default 30). | `900` (15 min) |
 | `MAX_ROWS_TOTAL` | **Hard limit**: the most rows ever sent per sheet (0 = no limit). Rows beyond it are held, and go out if you raise the limit. Use this for a demo. | `3` |
 | `MAX_ROWS_PER_SYNC` | Speed, not a limit: most rows sent per run. Without a total limit the rest follow in the next runs. | `200` |
 
@@ -120,7 +120,7 @@ POST /v1/sheets
 {
   "url": "https://docs.google.com/spreadsheets/d/<id>/edit#gid=0",
   "name": "Revspot - VW Bangalore",
-  "poll_minutes": 5,
+  "poll_minutes": 1,
   "ignore_columns": ["Most Recent Status", "Attempt #", "Current Status", "Last Updated", "Updated By"],
   "extra_fields": {"Lead source": "Revspot"}
 }
@@ -130,7 +130,7 @@ Per-sheet settings:
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `poll_minutes` | 5 | How often the sheet is checked (1 to 1440). |
+| `poll_minutes` | `DEFAULT_POLL_SECONDS` (30 s) | How often the sheet is checked (0.5 to 1440 minutes). |
 | `ignore_columns` | none | Columns whose changes should not send the row again, such as call-tracking columns. They are still included when the row is sent for another reason. |
 | `id_columns` | auto | Columns that identify a row (for example `Lead ID`). If left empty: an id-like column, else phone/email plus the creation date, else the whole row. |
 | `require_contact` | true | Hold a row until it has a phone or email, so half-typed rows are never sent. |
